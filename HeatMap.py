@@ -39,9 +39,21 @@ def load_and_process_data(file_path):
 
 # Function to geocode areas
 def geocode_areas(pollution_data):
+    from geopy.exc import GeocoderTimedOut, GeocoderUnavailable
+    import time
 
     geolocator = Nominatim(user_agent="pollution_map")
-    pollution_data['Coordinates'] = pollution_data['Area'].apply(lambda x: geolocator.geocode(x))
+
+    def geocode_with_retry(area, retries=3):
+        for i in range(retries):
+            try:
+                return geolocator.geocode(area, timeout=10)
+            except (GeocoderTimedOut, GeocoderUnavailable) as e:
+                print(f"Geocoding error for {area}: {e}. Retrying ({i+1}/{retries})...")
+                time.sleep(2)  # Wait for 2 seconds before retrying
+        return None
+
+    pollution_data['Coordinates'] = pollution_data['Area'].apply(lambda x: geocode_with_retry(x))
     pollution_data['Latitude'] = pollution_data['Coordinates'].apply(lambda loc: loc.latitude if loc else None)
     pollution_data['Longitude'] = pollution_data['Coordinates'].apply(lambda loc: loc.longitude if loc else None)
     return pollution_data.drop(columns=['Coordinates'])
@@ -64,7 +76,7 @@ def plot_map(pollution_data):
             color = mcolors.to_hex(colormap(norm(row['Pollution Level'])))
             folium.CircleMarker(
                 location=[row['Latitude'], row['Longitude']],
-                radius=5,  # Fixed radius for visibility
+                radius=15,  
                 color=color,
                 fill=True,
                 fill_opacity=0.8,
